@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RASH CRM</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4f5f7;
+            --card-bg: #ffffff;
+            --text-color: #222222;
+            --accent-color: #d32f2f;
+            --green-color: #2e7d32;
+            --red-color: #c62828;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 12px;
+            box-sizing: border-box;
+        }
+        h2 { text-align: center; margin-bottom: 16px; font-size: 20px; }
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            position: relative;
+        }
+        .status-badge {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: bold;
+            color: #fff;
+        }
+        .status-ok { background-color: var(--green-color); }
+        .status-alert { background-color: var(--red-color); }
+        .client-name { font-size: 16px; font-weight: bold; margin-bottom: 4px; padding-right: 70px; }
+        .client-info { font-size: 13px; color: #666; margin-bottom: 8px; }
+        .totals {
+            background: #fafafa;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 8px;
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--accent-color);
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            text-align: center;
+        }
+        .form-group { margin-bottom: 10px; }
+        label { display: block; font-size: 12px; margin-bottom: 4px; color: #555; }
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        .calc-preview {
+            font-size: 13px;
+            font-weight: bold;
+            color: var(--accent-color);
+            margin-top: 6px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal-content {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>📋 Учёт клиентов и остатков</h2>
+    <button class="btn" onclick="openAddModal()" style="margin-bottom: 16px;">+ Добавить нового клиента</button>
+
+    <div id="clients-list"></div>
+
+    <!-- Модальное окно: Догрузка товара -->
+    <div id="shipment-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="modal-client-title">Догрузка товара</h3>
+            <div class="form-group">
+                <label>VIP флакон (210 ₽/шт)</label>
+                <input type="number" id="input-bottles" value="0" min="0" oninput="calculateTotal()">
+            </div>
+            <div class="form-group">
+                <label>VIP картон (145 ₽/шт)</label>
+                <input type="number" id="input-cartons" value="0" min="0" oninput="calculateTotal()">
+            </div>
+            <div class="calc-preview" id="total-preview">Итого: 0 ₽</div>
+            <br>
+            <button class="btn" onclick="saveShipment()">Сохранить догрузку</button>
+            <button class="btn" style="background:#888; margin-top:8px;" onclick="closeModal('shipment-modal')">Отмена</button>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Новый клиент -->
+    <div id="add-client-modal" class="modal">
+        <div class="modal-content">
+            <h3>Новый клиент</h3>
+            <div class="form-group">
+                <label>Название / Имя</label>
+                <input type="text" id="new-name" placeholder="Напр. Автостиль">
+            </div>
+            <div class="form-group">
+                <label>Телефон</label>
+                <input type="text" id="new-phone" placeholder="+7 900 000-00-00">
+            </div>
+            <div class="form-group">
+                <label>Адрес</label>
+                <input type="text" id="new-address" placeholder="ул. Ленина, д. 10">
+            </div>
+            <br>
+            <button class="btn" onclick="saveNewClient()">Создать карточку</button>
+            <button class="btn" style="background:#888; margin-top:8px;" onclick="closeModal('add-client-modal')">Отмена</button>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        let currentClientId = null;
+
+        function calculateTotal() {
+            const bottles = parseInt(document.getElementById('input-bottles').value) || 0;
+            const cartons = parseInt(document.getElementById('input-cartons').value) || 0;
+            const total = (bottles * 210) + (cartons * 145);
+            document.getElementById('total-preview').innerText = `Итого: ${total.toLocaleString('ru-RU')} ₽`;
+        }
+
+        function openShipmentModal(clientId, clientName) {
+            currentClientId = clientId;
+            document.getElementById('modal-client-title').innerText = `Догрузка: ${clientName}`;
+            document.getElementById('input-bottles').value = 0;
+            document.getElementById('input-cartons').value = 0;
+            calculateTotal();
+            document.getElementById('shipment-modal').style.display = 'flex';
+        }
+
+        function openAddModal() {
+            document.getElementById('add-client-modal').style.display = 'flex';
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        async function saveShipment() {
+            const bottles = parseInt(document.getElementById('input-bottles').value) || 0;
+            const cartons = parseInt(document.getElementById('input-cartons').value) || 0;
+
+            await fetch('/api/shipment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    client_id: currentClientId,
+                    bottles: bottles,
+                    cartons: cartons
+                })
+            });
+
+            closeModal('shipment-modal');
+            loadClients();
+        }
+
+        async function saveNewClient() {
+            const name = document.getElementById('new-name').value;
+            const phone = document.getElementById('new-phone').value;
+            const address = document.getElementById('new-address').value;
+
+            if (!name) return alert('Введите название!');
+
+            await fetch('/api/clients', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, phone, address })
+            });
+
+            closeModal('add-client-modal');
+            loadClients();
+        }
+
+        async function loadClients() {
+            const res = await fetch('/api/clients');
+            const clients = await res.json();
+            const container = document.getElementById('clients-list');
+            container.innerHTML = '';
+
+            clients.forEach(c => {
+                const totalSum = (c.total_bottles * 210) + (c.total_cartons * 145);
+                const isAlert = c.days_passed >= 30;
+                const statusClass = isAlert ? 'status-alert' : 'status-ok';
+                const statusText = c.days_passed !== null ? `${c.days_passed} дн.` : 'Новый';
+
+                const cardHtml = `
+                    <div class="card">
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                        <div class="client-name">${c.name}</div>
+                        <div class="client-info">📍 ${c.address || 'Адрес не указан'} | 📞 ${c.phone || '-'}</div>
+                        <div class="totals">
+                            <b>Всего поставлено:</b><br>
+                            VIP флаконы: ${c.total_bottles} шт. | VIP картоны: ${c.total_cartons} шт.<br>
+                            <b>Сумма товара: ${totalSum.toLocaleString('ru-RU')} ₽</b>
+                        </div>
+                        <button class="btn" onclick="openShipmentModal(${c.id}, '${c.name}')">+ Догрузить товар</button>
+                    </div>
+                `;
+                container.innerHTML += cardHtml;
+            });
+        }
+
+        loadClients();
+    </script>
+</body>
+</html>
